@@ -16,6 +16,7 @@
 package io.vertx.cassandra.impl;
 
 import com.datastax.driver.core.Cluster;
+import com.datastax.driver.core.NettyOptions;
 import com.datastax.driver.core.PreparedStatement;
 import com.datastax.driver.core.ResultSetFuture;
 import com.datastax.driver.core.Row;
@@ -23,6 +24,7 @@ import com.datastax.driver.core.Session;
 import com.datastax.driver.core.SimpleStatement;
 import com.datastax.driver.core.Statement;
 import com.google.common.util.concurrent.ListenableFuture;
+import io.netty.channel.EventLoopGroup;
 import io.vertx.cassandra.CassandraClient;
 import io.vertx.cassandra.CassandraClientOptions;
 import io.vertx.cassandra.CassandraRowStream;
@@ -37,6 +39,7 @@ import io.vertx.core.shareddata.Shareable;
 
 import java.io.Closeable;
 import java.util.List;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
@@ -134,7 +137,10 @@ public class CassandraClientImpl implements CassandraClient {
       }
     }
 
-    Cluster build = builder.withPort(cassandraHolder.options.port()).build();
+    Cluster build = builder
+      .withNettyOptions(new VertxNettyOptions(vertx))
+      .withPort(cassandraHolder.options.port())
+      .build();
     ListenableFuture<Session> connectGuavaFuture;
     if (keyspace == null) {
       connectGuavaFuture = build.connectAsync();
@@ -271,6 +277,26 @@ public class CassandraClientImpl implements CassandraClient {
       if (handlerToFailIfNoSessionPresent != null) {
         handlerToFailIfNoSessionPresent.handle(Future.failedFuture("In order to do this, you should be connected"));
       }
+    }
+  }
+
+  private static class VertxNettyOptions extends NettyOptions {
+
+    VertxInternal vertx;
+
+    public VertxNettyOptions(VertxInternal vertx) {
+      this.vertx = vertx;
+    }
+
+    @Override
+    public EventLoopGroup eventLoopGroup(ThreadFactory threadFactory) {
+      return vertx.getEventLoopGroup();
+    }
+
+    @Override
+    public void onClusterClose(EventLoopGroup eventLoopGroup) {
+      // it is important to not do anything here
+      // because the default behaviour is to shutdown the Vert.x event loop group
     }
   }
 }
